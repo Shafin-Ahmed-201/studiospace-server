@@ -22,10 +22,55 @@ export async function connectToMongoDB() {
 }
 const connectedClient=await connectToMongoDB()
 const db=connectedClient.db('studiospaceDB')
+const studios=db.collection('studios')
 
 
+//set Studio
+app.post('/studios',async(req,res)=>{
+  const newStudio=req.body
+  console.log('Adding new destination:',newStudio)
+  const result=await studios.insertOne(newStudio)
+  res.status(201).send(result)
+})
+//get all studio
+app.get('/studios',async(req,res)=>{
+  const cursor=studios.find({})
+  const allStudios=await cursor.toArray()
+  res.send(allStudios)
+})
+//get one studio
+app.get('/studios/:id',async(req,res)=>{
+    
+  try {
+    const id=req.params.id
+    const query={_id:new ObjectId(id)}
+    const studio=await studios.findOne(query)
+    if(!studio) return res.status(404).send({message:'Studio not found'})
+    res.send(studio)
+  } catch (error) {
+    res.status(400).send({message:'Invalid studio id'})
+  }
+})
 
+// get one category
 
+app.get("/studio", async (req, res) => {
+  try {
+    const category = req.query.category;
+
+    const filter = category ? { category } : {};
+
+    // Fetch matching documents
+    const studioList = await studios
+      .find(filter)
+      .toArray();
+
+    res.status(200).send(studioList);
+  } catch (error) {
+    console.error("Error fetching studios:", error);
+    res.status(500).send({ message: "Failed to fetch studios" });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Example app listening on port ${PORT}`)
