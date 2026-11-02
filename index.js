@@ -205,14 +205,29 @@ app.post("/bookings", async (req, res) => {
     }
 
     const studio = await studios.findOne({
-      _id: new ObjectId(studioId),
-    });
+  _id: new ObjectId(studioId),
+});
 
-    if (!studio) {
-      return res.status(404).send({
-        message: "Studio not found.",
-      });
-    }
+if (!studio) {
+  return res.status(404).send({
+    message: "Studio not found.",
+  });
+}
+//Duplicate Booking checker
+// Check whether this user already has a confirmed booking
+// for the same studio.
+const existingBooking = await bookingsCollection.findOne({
+  studioId: studioId,
+  userEmail: userEmail,
+  status: "confirmed",
+});
+
+if (existingBooking) {
+  return res.status(409).send({
+    success: false,
+    message: "You have already booked this studio!",
+  });
+}
 
     const start = new Date(`${bookingDate}T${startTime}:00`);
     const end = new Date(`${bookingDate}T${endTime}:00`);
@@ -298,6 +313,25 @@ app.post("/bookings", async (req, res) => {
 
     res.status(500).send({
       message: "Failed to create booking.",
+    });
+  }
+});
+
+app.get("/my-bookings/:email", async (req, res) => {
+  try {
+    const { email } = req.params;
+
+    const bookings = await bookingsCollection
+      .find({ userEmail: email })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).send(bookings);
+  } catch (error) {
+    console.error("Fetch bookings error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch bookings.",
     });
   }
 });
