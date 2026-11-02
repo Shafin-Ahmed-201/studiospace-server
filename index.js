@@ -28,7 +28,7 @@ const studios=db.collection('studios')
 //set Studio
 app.post('/studios',async(req,res)=>{
   const newStudio=req.body
-  console.log('Adding new destination:',newStudio)
+  console.log('Adding new studio:',newStudio)
   const result=await studios.insertOne(newStudio)
   res.status(201).send(result)
 })
@@ -71,7 +71,18 @@ app.get("/studio", async (req, res) => {
     res.status(500).send({ message: "Failed to fetch studios" });
   }
 });
-
+//get using email
+app.get('/my-listings/:email', async(req,res)=>{
+  const {email}=req.params
+  const result=await studios.find({userEmail:email}).toArray()
+  res.send(result)
+})
+//Delete My-Listing data
+app.delete('/my-listings/:id',async(req,res)=>{
+  const {id}=req.params
+  const result=await studios.deleteOne({_id:new ObjectId(id)})
+  res.send(result)
+})
 app.listen(PORT, () => {
   console.log(`Example app listening on port ${PORT}`)
 })
