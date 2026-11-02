@@ -336,6 +336,66 @@ app.get("/my-bookings/:email", async (req, res) => {
   }
 });
 
+app.delete("/bookings/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userEmail } = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        message: "Invalid booking ID.",
+      });
+    }
+
+    const booking = await bookingsCollection.findOne({
+      _id: new ObjectId(id),
+      userEmail,
+    });
+
+    if (!booking) {
+      return res.status(404).send({
+        message: "Booking not found.",
+      });
+    }
+
+    if (booking.status !== "confirmed") {
+      return res.status(400).send({
+        message: "This booking cannot be cancelled.",
+      });
+    }
+
+    const bookingStart = new Date(
+      `${booking.bookingDate}T${booking.startTime}:00`
+    );
+
+    if (bookingStart <= new Date()) {
+      return res.status(400).send({
+        message: "You can only cancel before the booking starts.",
+      });
+    }
+
+    await bookingsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status: "cancelled",
+          cancelledAt: new Date(),
+        },
+      }
+    );
+
+    res.status(200).send({
+      success: true,
+      message: "Booking cancelled successfully.",
+    });
+  } catch (error) {
+    console.error("Cancel booking error:", error);
+
+    res.status(500).send({
+      message: "Failed to cancel booking.",
+    });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Example app listening on port ${PORT}`)
