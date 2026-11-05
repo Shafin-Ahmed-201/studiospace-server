@@ -190,7 +190,7 @@ app.put("/studios/:id",verifyToken, async (req, res) => {
 });
 
 //Booking Related Api
-app.post("/bookings",verifyToken, async (req, res) => {
+app.post("/bookings", async (req, res) => {
   try {
     const {
       studioId,
