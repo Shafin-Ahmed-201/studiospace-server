@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import { MongoClient, ObjectId } from 'mongodb';
 import 'dotenv/config'
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const app=express()
 const PORT=process.env.PORT||5000
@@ -10,7 +11,7 @@ app.use(cors())
 app.use(express.json())
 
 //MongoDB connection->
-const client = new MongoClient(`mongodb://${process.env.DB_USER}:${process.env.DB_PASSWORD}@ac-php7rd4-shard-00-00.8bihj8d.mongodb.net:27017,ac-php7rd4-shard-00-01.8bihj8d.mongodb.net:27017,ac-php7rd4-shard-00-02.8bihj8d.mongodb.net:27017/?ssl=true&replicaSet=atlas-fmvmrf-shard-0&authSource=admin`);
+const client = new MongoClient(process.env.MONGO_URL);
 export async function connectToMongoDB() {
   try {
     await client.connect();
@@ -25,9 +26,29 @@ const db=connectedClient.db('studiospaceDB')
 const studios=db.collection('studios')
 const bookingsCollection = db.collection("bookings");
 
+//Jwt Security
+const verifyToken=async(req,res,next)=>{
+  const authHeader=req.headers.authorization
+  if(!authHeader){
+    return res.status(401).send({ message: "Unauthorized!" })
+  }
+  const token=authHeader.split(' ')[1]
+  if(!token){
+    return res.status(401).send({ message: "Unauthorized!" })
+  }
+  const JWKS=createRemoteJWKSet(new URL (`${process.env.CLIENT_URL}/api/auth/jwks`))
+  
+  try{
+const {payload}=await jwtVerify(token,JWKS)
+ next()
+  }catch(error){
+    return res.status(500).send({ message: "Server Error!" })
+  }
+ 
+}
 
 //set Studio
-app.post('/studios',async(req,res)=>{
+app.post('/studios',verifyToken,async(req,res)=>{
   const newStudio=req.body
   console.log('Adding new studio:',newStudio)
   const result=await studios.insertOne(newStudio)
@@ -54,7 +75,6 @@ app.get('/studios/:id',async(req,res)=>{
 })
 
 // get one category
-
 app.get("/studio", async (req, res) => {
   try {
     const category = req.query.category;
@@ -73,19 +93,19 @@ app.get("/studio", async (req, res) => {
   }
 });
 //get using email
-app.get('/my-listings/:email', async(req,res)=>{
+app.get('/my-listings/:email',verifyToken, async(req,res)=>{
   const {email}=req.params
   const result=await studios.find({userEmail:email}).toArray()
   res.send(result)
 })
 //Delete My-Listing data
-app.delete('/my-listings/:id',async(req,res)=>{
+app.delete('/my-listings/:id',verifyToken,async(req,res)=>{
   const {id}=req.params
   const result=await studios.deleteOne({_id:new ObjectId(id)})
   res.send(result)
 })
 //Edit studio
-app.put("/studios/:id", async (req, res) => {
+app.put("/studios/:id",verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -170,8 +190,7 @@ app.put("/studios/:id", async (req, res) => {
 });
 
 //Booking Related Api
-
-app.post("/bookings", async (req, res) => {
+app.post("/bookings",verifyToken, async (req, res) => {
   try {
     const {
       studioId,
@@ -317,7 +336,7 @@ if (existingBooking) {
   }
 });
 
-app.get("/my-bookings/:email", async (req, res) => {
+app.get("/my-bookings/:email",verifyToken, async (req, res) => {
   try {
     const { email } = req.params;
 
@@ -336,17 +355,26 @@ app.get("/my-bookings/:email", async (req, res) => {
   }
 });
 
-app.delete("/bookings/:id", async (req, res) => {
+app.delete("/bookings/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { userEmail } = req.body;
 
+    // Validate booking ID
     if (!ObjectId.isValid(id)) {
       return res.status(400).send({
         message: "Invalid booking ID.",
       });
     }
 
+    // Validate user email
+    if (!userEmail) {
+      return res.status(400).send({
+        message: "User email is required.",
+      });
+    }
+
+    // Find booking belonging to this user
     const booking = await bookingsCollection.findOne({
       _id: new ObjectId(id),
       userEmail,
@@ -358,12 +386,14 @@ app.delete("/bookings/:id", async (req, res) => {
       });
     }
 
+    // Only confirmed bookings can be cancelled
     if (booking.status !== "confirmed") {
       return res.status(400).send({
         message: "This booking cannot be cancelled.",
       });
     }
 
+    // Check booking start time
     const bookingStart = new Date(
       `${booking.bookingDate}T${booking.startTime}:00`
     );
@@ -374,29 +404,33 @@ app.delete("/bookings/:id", async (req, res) => {
       });
     }
 
-    await bookingsCollection.updateOne(
-      { _id: new ObjectId(id) },
-      {
-        $set: {
-          status: "cancelled",
-          cancelledAt: new Date(),
-        },
-      }
-    );
+    // Permanently delete booking from MongoDB
+    const result = await bookingsCollection.deleteOne({
+      _id: new ObjectId(id),
+      userEmail,
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({
+        message: "Booking could not be deleted.",
+      });
+    }
 
     res.status(200).send({
       success: true,
-      message: "Booking cancelled successfully.",
+      message: "Booking cancelled and deleted successfully.",
     });
+
   } catch (error) {
-    console.error("Cancel booking error:", error);
+    console.error("Delete booking error:", error);
 
     res.status(500).send({
       message: "Failed to cancel booking.",
     });
   }
 });
-
 app.listen(PORT, () => {
   console.log(`Example app listening on port ${PORT}`)
 })
+
+export default app
